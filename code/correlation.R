@@ -4,7 +4,7 @@
 
 `%notin%` <- Negate(`%in%`)
 
-correlation_df <- function(){
+correlation_df <- function(path_task_analysis = path_task_analysis_results){
   
   Hallmark <- msigdbr(species = "Homo sapiens", category = "H")
   
@@ -40,7 +40,7 @@ correlation_df <- function(){
   }
   rownames(geneexpression) <- cellline
 
-  pathway_activity <- vroom("data/flux_table.txt", delim = "\t", 
+  pathway_activity <- vroom(path_task_analysis, delim = "\t", 
                             col_types = cols(.default = "c")) %>%
     select(!c("System", "Subsystem")) %>%
     pivot_longer(cols = c(-Description), names_to = "X") %>%
