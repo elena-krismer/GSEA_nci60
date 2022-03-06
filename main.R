@@ -17,6 +17,7 @@ library(splines)
 source("code/functions.R")
 source("code/lct_functions.R")
 source("code/correlation.R")
+source("code/gene_sets.R")
 
 # angiogensesis GOBP_BLOOD_VESSL_MORPHOGENESIS
 # https://www.gsea-msigdb.org/gsea/msigdb/geneset_page.jsp?geneSetName=GOBP_BLOOD_VESSEL_MORPHOGENESIS
@@ -26,8 +27,11 @@ source("code/correlation.R")
 # Shiny
 # ----------------------------------------------------------------------------
 
+#
+
+path_task_analysis_results <- "data/flux_table.txt"
 # input variables
-active_pathway_options <- vroom("data/flux_table.txt",
+active_pathway_options <- vroom(path_task_analysis_results,
   delim = "\t"
 ) %>%
   mutate(
@@ -43,13 +47,16 @@ active_pathway_options <- vroom("data/flux_table.txt",
 
 names(active_pathway_options) <- NULL
 
-gene_set_database_options <- c("Hallmark", "C5_gobp", "C5_gomf", "C5_gocc")
+gene_set_database_options <- c("Hallmark", "C5_gobp", "C5_gomf", "C5_gocc",
+                               "C2_cgp", "combined_gs")
 
 
 Hallmark <- msigdbr(species = "Homo sapiens", category = "H")
 C5_gobp <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "GO:BP")
 C5_gomf <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "GO:MF")
 C5_gocc <- msigdbr(species = "Homo sapiens", category = "C5", subcategory = "GO:CC")
+C2_cgp <- msigdbr(species = "Homo sapiens", category = "C2", subcategory = "CGP")
+combined_gs <- get_combined_gs()
 
 
 ui <- fluidPage(
@@ -78,7 +85,7 @@ ui <- fluidPage(
         selectInput(
           inputId = "selected_geneset_lct", label = "Select geneset database",
           choices = gene_set_database_options, selected = "Hallmark"
-        ) # ,
+        ),  actionButton("button", "Submit")# ,
         # actionButton("button", strong("Submit"))
       )
     ),
@@ -101,6 +108,9 @@ ui <- fluidPage(
 )
 
 server <- function(input, output) {
+  
+  path_task_analysis_results <- "data/flux_results_models_publication.txt"
+  
   #------------------------------------------------------------------------------
   # run gsea
   #-----------------------------------------------------------------------------
@@ -116,6 +126,10 @@ server <- function(input, output) {
       gene_set <- C5_gobp
     } else if (gene_set_1 == "C5_gomf") {
       gene_set <- C5_gomf
+    } else if (gene_set_1 == "combined_gs") {
+      gene_set <- combined_gs
+    } else if (gene_set_1 == "C2_cgp") {
+      gene_set <- C2_cgp
     } else {
       gene_set <- C5_gocc
     }
@@ -157,15 +171,20 @@ server <- function(input, output) {
   })
 
   
-  #------------------------------------------------------------------------------
+  #-----------------------------------------------------------------------------
   # run lct
   #-----------------------------------------------------------------------------
   
-  pathway_activity <- read.csv("data/flux_table.txt",
+  pathway_activity <- read.csv("data/flux_results_models_publication.txt",
                                sep = "\t",
-                               colClasses = c(rep("character", 3), rep("double", 59))
-  ) %>%
-    select(!c("System", "Subsystem"))
+                               colClasses = c(rep("character", 3), rep("double", 59))) %>%
+    dplyr::select(!c("System", "Subsystem")) %>%
+    column_to_rownames("Description") %>%
+    mutate_all(function(x) as.numeric(as.character(x))) %>%
+    apply(1, function(x)(x-min(x))/(max(x)-min(x))) %>%
+    t() %>%
+    as.data.frame() %>%
+    rownames_to_column("Description")
   
   geneexpression <- read.csv("data/nci_60_expression.txt", sep = "\t") %>%
     # remove ME MDA N as no expression data is available
@@ -187,6 +206,10 @@ server <- function(input, output) {
       gene_set <- C5_gobp
     } else if (gene_set_1 == "C5_gomf") {
       gene_set <- C5_gomf
+    } else if (gene_set_1 == "combined_gs") {
+      gene_set <- combined_gs
+    } else if (gene_set_1 == "C2_cgp") {
+      gene_set <- C2_cgp
     } else {
       gene_set <- C5_gocc
     }
@@ -221,6 +244,7 @@ server <- function(input, output) {
   #------------------------------------------------------------------------------
   # output lct
   #-----------------------------------------------------------------------------
+  observeEvent(input$button, {
   output$lct_table <- renderDataTable({
     geneset_matrix <- geneset_lct_preprocessing()
     phenotype_data <- phenotype_data_preprocessing(phenotype = pathway_activity)
@@ -230,6 +254,7 @@ server <- function(input, output) {
       phenotype_data = phenotype_data,
       nbPermutations = 1000
     )
+  })
   })
   #------------------------------------------------------------------------------
   # output correlation
